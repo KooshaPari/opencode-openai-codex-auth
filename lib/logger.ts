@@ -84,3 +84,16 @@ export function logWarn(message: string, data?: unknown): void {
 		console.warn(`[openai-codex-plugin] ${message}`);
 	}
 }
+
+/**
+ * Log error (always enabled for errors)
+ * @param message - Error message
+ * @param data - Optional data to log
+ */
+export function logError(message: string, data?: unknown): void {
+	if (data !== undefined) {
+		console.error(`[openai-codex-plugin] ${message}`, data);
+	} else {
+		console.error(`[openai-codex-plugin] ${message}`);
+	}
+}

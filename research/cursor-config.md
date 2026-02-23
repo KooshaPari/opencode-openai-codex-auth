@@ -1,0 +1,86 @@
+Configuration | Cursor Docs
+Skip to main content
+
+Search docs...
+⌘K
+Ask AI⌘I
+Sign in
+
+Command Palette
+Search for a command to run...
+
+Reference
+Configuration
+Configure the Agent CLI using the cli-config.json file.
+
+File location
+Type	Platform	Path
+Global	macOS/Linux	~/.cursor/cli-config.json
+Global	Windows	$env:USERPROFILE\.cursor\cli-config.json
+Project	All	<project>/.cursor/cli.json
+Only permissions can be configured at the project level. All other CLI settings must be set globally.
+
+Override with environment variables:
+
+CURSOR_CONFIG_DIR: custom directory path
+XDG_CONFIG_HOME (Linux/BSD): uses $XDG_CONFIG_HOME/cursor/cli-config.json
+Schema
+Required fields
+Field	Type	Description
+version	number	Config schema version (current: 1)
+editor.vimMode	boolean	Enable Vim keybindings (default: false)
+permissions.allow	string[]	Permitted operations (see Permissions)
+permissions.deny	string[]	Forbidden operations (see Permissions)
+Optional fields
+Field	Type	Description
+model	object	Selected model configuration
+hasChangedDefaultModel	boolean	CLI-managed model override flag
+Examples
+Minimal config
+
+{
+  "version": 1,
+  "editor": { "vimMode": false },
+  "permissions": { "allow": ["Shell(ls)"], "deny": [] }
+}
+Enable Vim mode
+
+{
+  "version": 1,
+  "editor": { "vimMode": true },
+  "permissions": { "allow": ["Shell(ls)"], "deny": [] }
+}
+Configure permissions
+
+{
+  "version": 1,
+  "editor": { "vimMode": false },
+  "permissions": {
+    "allow": ["Shell(ls)", "Shell(echo)"],
+    "deny": ["Shell(rm)"]
+  }
+}
+See Permissions for available permission types and examples.
+
+Troubleshooting
+Config errors: Move the file aside and restart:
+
+
+mv ~/.cursor/cli-config.json ~/.cursor/cli-config.json.bad
+Changes don't persist: Ensure valid JSON and write permissions. Some fields are CLI-managed and may be overwritten.
+
+Notes
+Pure JSON format (no comments)
+CLI performs self-repair for missing fields
+Corrupted files are backed up as .bad and recreated
+Permission entries are exact strings (see Permissions for details)
+Models
+You can select a model for the CLI using the /model slash command.
+
+
+/model auto
+/model gpt-5
+/model sonnet-4
+See the Slash commands docs for other commands.
+
+Open chat

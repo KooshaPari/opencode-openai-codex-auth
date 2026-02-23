@@ -29,17 +29,13 @@ import { getCodexInstructions } from "./lib/prompts/codex.js";
 import { startLocalOAuthServer } from "./lib/auth/server.js";
 import { logRequest } from "./lib/logger.js";
 import { openBrowserUrl } from "./lib/auth/browser.js";
+import { loadPluginConfig, getCodexMode } from "./lib/config.js";
+import { initializeProviders } from "./lib/providers/provider-registry.js";
+import { createProviderFetch } from "./lib/providers/provider-fetch.js";
 import {
 	shouldRefreshToken,
 	refreshAndUpdateToken,
-	extractRequestUrl,
-	rewriteUrlForCodex,
-	transformRequestForCodex,
-	createCodexHeaders,
-	handleErrorResponse,
-	handleSuccessResponse,
 } from "./lib/request/fetch-helpers.js";
-import { loadPluginConfig, getCodexMode } from "./lib/config.js";
 import type { UserConfig } from "./lib/types.js";
 import {
 	DUMMY_API_KEY,
@@ -117,27 +113,37 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 				// Fetch Codex system instructions (cached with ETag for efficiency)
 				const CODEX_INSTRUCTIONS = await getCodexInstructions();
 
+				// Initialize provider system
+				initializeProviders();
+
+				// Create provider-aware fetch function
+				const providerFetch = createProviderFetch(
+					getAuth,
+					accountId,
+					userConfig,
+					codexMode
+				);
+
 				// Return SDK configuration
 				return {
 					apiKey: DUMMY_API_KEY,
 					baseURL: CODEX_BASE_URL,
 					/**
-					 * Custom fetch implementation for Codex API
+					 * Provider-aware fetch implementation
 					 *
 					 * Handles:
+					 * - Multi-provider routing (Codex, Augment, Cursor)
 					 * - Token refresh when expired
-					 * - URL rewriting for Codex backend
 					 * - Request body transformation
-					 * - OAuth header injection
-					 * - SSE to JSON conversion for non-tool requests
-					 * - Error handling and logging
+					 * - Provider-specific error handling
+					 * - Fallback between providers
 					 *
 					 * @param input - Request URL or Request object
 					 * @param init - Request options
-					 * @returns Response from Codex API
+					 * @returns Response from appropriate provider
 					 */
 					async fetch(input: Request | string | URL, init?: RequestInit): Promise<Response> {
-						// Step 1: Check and refresh token if needed
+						// Step 1: Check and refresh token if needed (for OAuth providers)
 						const currentAuth = await getAuth();
 						if (shouldRefreshToken(currentAuth)) {
 							const refreshResult = await refreshAndUpdateToken(currentAuth, client);
@@ -146,39 +152,20 @@ export const OpenAIAuthPlugin: Plugin = async ({ client }: PluginInput) => {
 							}
 						}
 
-						// Step 2: Extract and rewrite URL for Codex backend
-						const originalUrl = extractRequestUrl(input);
-						const url = rewriteUrlForCodex(originalUrl);
+						// Step 2: Route request through provider system
+						const response = await providerFetch(input, init);
 
-						// Step 3: Transform request body with Codex instructions
-						const transformation = await transformRequestForCodex(init, url, CODEX_INSTRUCTIONS, userConfig, codexMode);
-						const hasTools = transformation?.body.tools !== undefined;
-						const requestInit = transformation?.updatedInit ?? init;
-
-						// Step 4: Create headers with OAuth and ChatGPT account info
-						const accessToken = currentAuth.type === "oauth" ? currentAuth.access : "";
-						const headers = createCodexHeaders(requestInit, accountId, accessToken);
-
-						// Step 5: Make request to Codex API
-						const response = await fetch(url, {
-							...requestInit,
-							headers,
-						});
-
-						// Step 6: Log response
+						// Step 3: Log response for debugging
 						logRequest(LOG_STAGES.RESPONSE, {
 							status: response.status,
 							ok: response.ok,
 							statusText: response.statusText,
 							headers: Object.fromEntries(response.headers.entries()),
+							provider: response.headers.get('X-Provider'),
+							model: response.headers.get('X-Model'),
 						});
 
-						// Step 7: Handle error or success response
-						if (!response.ok) {
-							return await handleErrorResponse(response);
-						}
-
-						return await handleSuccessResponse(response, hasTools);
+						return response;
 					},
 				};
 			},

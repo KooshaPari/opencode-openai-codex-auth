@@ -139,8 +139,8 @@
             "textVerbosity": "medium"
           }
         },
-        "cursor-sonnet-4.5": {
-          "name": "Cursor Sonnet-4.5 (CLI)",
+        "cursor-sonnet-4": {
+          "name": "Cursor Sonnet-4 (CLI)",
           "options": {
             "reasoningEffort": "high",
             "reasoningSummary": "detailed",
@@ -155,8 +155,8 @@
             "textVerbosity": "medium"
           }
         },
-        "cursor-claude-4.5-thinking": {
-          "name": "Cursor Claude 4.5 Thinking (CLI)",
+        "cursor-claude-3.7-thinking": {
+          "name": "Cursor Claude 3.7 Thinking (CLI)",
           "options": {
             "reasoningEffort": "high",
             "reasoningSummary": "detailed",
@@ -195,32 +195,8 @@
             "textVerbosity": "medium"
           }
         },
-        "augment-claude-4.5": {
-          "name": "Augment Claude 4.5 (CLI)",
-          "options": {
-            "reasoningEffort": "high",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "high"
-          }
-        },
-        "augment-claude-4.5-thinking": {
-          "name": "Augment Claude 4.5 Thinking (CLI)",
-          "options": {
-            "reasoningEffort": "high",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "high"
-          }
-        },
-        "augment-sonnet-4.5": {
-          "name": "Augment Sonnet 4.5 (CLI)",
-          "options": {
-            "reasoningEffort": "high",
-            "reasoningSummary": "detailed",
-            "textVerbosity": "high"
-          }
-        },
-        "augment-opus-4.1": {
-          "name": "Augment Opus 4.1 (CLI)",
+        "augment-claude": {
+          "name": "Augment Claude (CLI)",
           "options": {
             "reasoningEffort": "high",
             "reasoningSummary": "detailed",

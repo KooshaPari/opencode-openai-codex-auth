@@ -264,6 +264,95 @@ export function addToolRemapMessage(
 	return [toolRemapMessage, ...input];
 }
 
+interface ModelResolution {
+	originalModel?: string;
+	normalizedModel: string;
+	lookupModel: string;
+	modelConfig: ConfigOptions;
+}
+
+function resolveModelResolution(
+	model: string | undefined,
+	userConfig: UserConfig = { global: {}, models: {} },
+): ModelResolution {
+	const normalizedModel = normalizeModel(model);
+	const lookupModel = model || normalizedModel;
+	const modelConfig = getModelConfig(lookupModel, userConfig);
+
+	logDebug(`Model config lookup: "${lookupModel}" → normalized to "${normalizedModel}" for API`, {
+		hasModelSpecificConfig: !!userConfig.models?.[lookupModel],
+		resolvedConfig: modelConfig,
+	});
+
+	return {
+		originalModel: model,
+		normalizedModel,
+		lookupModel,
+		modelConfig,
+	};
+}
+
+function applyCodexDefaults(body: RequestBody, codexInstructions: string): void {
+	body.store = false;
+	body.stream = true;
+	body.instructions = codexInstructions;
+}
+
+async function processInputForCodex(
+	input: InputItem[] | undefined,
+	hasTools: boolean,
+	codexMode: boolean,
+): Promise<InputItem[] | undefined> {
+	if (!Array.isArray(input)) return input;
+
+	const originalIds = input.filter((item) => item.id).map((item) => item.id);
+	if (originalIds.length > 0) {
+		logDebug(`Filtering ${originalIds.length} message IDs from input:`, originalIds);
+	}
+
+	let processed = filterInput(input);
+
+	const remainingIds = (processed || []).filter((item) => item.id).map((item) => item.id);
+	if (remainingIds.length > 0) {
+		logWarn(`WARNING: ${remainingIds.length} IDs still present after filtering:`, remainingIds);
+	} else if (originalIds.length > 0) {
+		logDebug(`Successfully removed all ${originalIds.length} message IDs`);
+	}
+
+	if (codexMode) {
+		processed = await filterOpenCodeSystemPrompts(processed);
+		processed = addCodexBridgeMessage(processed, hasTools);
+	} else {
+		processed = addToolRemapMessage(processed, hasTools);
+	}
+
+	return processed;
+}
+
+function applyConfigurationOverrides(
+	body: RequestBody,
+	originalModel: string | undefined,
+	modelConfig: ConfigOptions,
+): void {
+	const reasoningConfig = getReasoningConfig(originalModel, modelConfig);
+	body.reasoning = {
+		...body.reasoning,
+		...reasoningConfig,
+	};
+
+	body.text = {
+		...body.text,
+		verbosity: modelConfig.textVerbosity || "medium",
+	};
+
+	body.include = modelConfig.include || ["reasoning.encrypted_content"];
+}
+
+function removeUnsupportedParameters(body: RequestBody): void {
+	body.max_output_tokens = undefined;
+	body.max_completion_tokens = undefined;
+}
+
 /**
  * Transform request body for Codex API
  *
@@ -284,79 +373,27 @@ export async function transformRequestBody(
 	userConfig: UserConfig = { global: {}, models: {} },
 	codexMode = true,
 ): Promise<RequestBody> {
-	const originalModel = body.model;
-	const normalizedModel = normalizeModel(body.model);
+	const { originalModel, normalizedModel, lookupModel, modelConfig } = resolveModelResolution(
+		body.model,
+		userConfig,
+	);
 
-	// Get model-specific configuration using ORIGINAL model name (config key)
-	// This allows per-model options like "gpt-5-codex-low" to work correctly
-	const lookupModel = originalModel || normalizedModel;
-	const modelConfig = getModelConfig(lookupModel, userConfig);
-
-	// Debug: Log which config was resolved
-	logDebug(`Model config lookup: "${lookupModel}" → normalized to "${normalizedModel}" for API`, {
-		hasModelSpecificConfig: !!userConfig.models?.[lookupModel],
-		resolvedConfig: modelConfig,
-	});
-
-	// Normalize model name for API call
+	// Apply model normalization
 	body.model = normalizedModel;
 
-	// Codex required fields
-	// ChatGPT backend REQUIRES store=false (confirmed via testing)
-	body.store = false;
-	body.stream = true;
-	body.instructions = codexInstructions;
+	// Apply Codex-specific defaults
+	applyCodexDefaults(body, codexInstructions);
 
-	// Filter and transform input
+	// Process input array if present
 	if (body.input && Array.isArray(body.input)) {
-		// Debug: Log original input message IDs before filtering
-		const originalIds = body.input.filter(item => item.id).map(item => item.id);
-		if (originalIds.length > 0) {
-			logDebug(`Filtering ${originalIds.length} message IDs from input:`, originalIds);
-		}
-
-		body.input = filterInput(body.input);
-
-		// Debug: Verify all IDs were removed
-		const remainingIds = (body.input || []).filter(item => item.id).map(item => item.id);
-		if (remainingIds.length > 0) {
-			logWarn(`WARNING: ${remainingIds.length} IDs still present after filtering:`, remainingIds);
-		} else if (originalIds.length > 0) {
-			logDebug(`Successfully removed all ${originalIds.length} message IDs`);
-		}
-
-		if (codexMode) {
-			// CODEX_MODE: Remove OpenCode system prompt, add bridge prompt
-			body.input = await filterOpenCodeSystemPrompts(body.input);
-			body.input = addCodexBridgeMessage(body.input, !!body.tools);
-		} else {
-			// DEFAULT MODE: Keep original behavior with tool remap message
-			body.input = addToolRemapMessage(body.input, !!body.tools);
-		}
+		body.input = await processInputForCodex(body.input, !!body.tools, codexMode);
 	}
 
-	// Configure reasoning (use model-specific config)
-	const reasoningConfig = getReasoningConfig(originalModel, modelConfig);
-	body.reasoning = {
-		...body.reasoning,
-		...reasoningConfig,
-	};
+	// Apply configuration overrides
+	applyConfigurationOverrides(body, originalModel, modelConfig);
 
-	// Configure text verbosity (support user config)
-	// Default: "medium" (matches Codex CLI default for all GPT-5 models)
-	body.text = {
-		...body.text,
-		verbosity: modelConfig.textVerbosity || "medium",
-	};
-
-	// Add include for encrypted reasoning content
-	// Default: ["reasoning.encrypted_content"] (required for stateless operation with store=false)
-	// This allows reasoning context to persist across turns without server-side storage
-	body.include = modelConfig.include || ["reasoning.encrypted_content"];
-
-	// Remove unsupported parameters
-	body.max_output_tokens = undefined;
-	body.max_completion_tokens = undefined;
+	// Clean up unsupported parameters
+	removeUnsupportedParameters(body);
 
 	return body;
 }

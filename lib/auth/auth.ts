@@ -1,5 +1,6 @@
 import { generatePKCE } from "@openauthjs/openauth/pkce";
 import { randomBytes } from "node:crypto";
+import { createAuthError, handleNetworkError, isAuthError } from "../utils/errors.js";
 import type { PKCEPair, AuthorizationFlow, TokenResult, ParsedAuthInput, JWTPayload } from "../types.js";
 
 // OAuth constants (from openai/codex)
@@ -73,7 +74,6 @@ export async function exchangeAuthorizationCode(
 	});
 	if (!res.ok) {
 		const text = await res.text().catch(() => "");
-		console.error("[openai-codex-plugin] code->token failed:", res.status, text);
 		return { type: "failed" };
 	}
 	const json = (await res.json()) as {
@@ -86,7 +86,6 @@ export async function exchangeAuthorizationCode(
 		!json?.refresh_token ||
 		typeof json?.expires_in !== "number"
 	) {
-		console.error("[openai-codex-plugin] token response missing fields:", json);
 		return { type: "failed" };
 	}
 	return {
@@ -107,7 +106,10 @@ export function decodeJWT(token: string): JWTPayload | null {
 		const parts = token.split(".");
 		if (parts.length !== 3) return null;
 		const payload = parts[1];
-		const decoded = Buffer.from(payload, "base64").toString("utf-8");
+		
+		// Add proper padding if needed for base64 decoding
+		const paddedPayload = payload + "=".repeat((4 - (payload.length % 4)) % 4);
+		const decoded = Buffer.from(paddedPayload, "base64").toString("utf-8");
 		return JSON.parse(decoded) as JWTPayload;
 	} catch {
 		return null;

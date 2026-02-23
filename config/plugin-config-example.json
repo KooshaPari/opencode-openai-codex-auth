@@ -1,0 +1,27 @@
+{
+  "codexMode": true,
+  "providers": {
+    "default": "codex",
+    "fallback": "augment",
+    "autoFallback": true,
+    "priority": ["codex", "augment", "cursor"],
+    "codex": {
+      "baseUrl": "https://chatgpt.com/backend-api",
+      "timeout": 30000,
+      "autoRefresh": true
+    },
+    "augment": {
+      "executable": "augment",
+      "args": [],
+      "cwd": ".",
+      "env": {}
+    },
+    "cursor": {
+      "executable": "cursor",
+      "args": [],
+      "cwd": ".",
+      "env": {},
+      "streaming": true
+    }
+  }
+}

@@ -9,6 +9,129 @@ export interface PluginConfig {
 	 * @default true
 	 */
 	codexMode?: boolean;
+	
+	/**
+	 * Provider configuration and fallback strategy
+	 */
+	providers?: ProviderConfig;
+}
+
+/**
+ * Provider configuration for multi-provider setup
+ */
+export interface ProviderConfig {
+	/**
+	 * Default provider to use when no specific provider is requested
+	 * @default 'codex'
+	 */
+	default?: 'codex' | 'augment' | 'cursor';
+	
+	/**
+	 * Fallback provider when default provider fails
+	 * @default 'augment'
+	 */
+	fallback?: 'codex' | 'augment' | 'cursor';
+	
+	/**
+	 * Provider-specific configurations
+	 */
+	codex?: CodexProviderConfig;
+	augment?: AugmentProviderConfig;
+	cursor?: CursorProviderConfig;
+	
+	/**
+	 * Enable automatic fallback between providers
+	 * @default true
+	 */
+	autoFallback?: boolean;
+	
+	/**
+	 * Provider priority for model-based selection
+	 * @default ['codex', 'augment', 'cursor']
+	 */
+	priority?: Array<'codex' | 'augment' | 'cursor'>;
+}
+
+/**
+ * Codex provider specific configuration
+ */
+export interface CodexProviderConfig {
+	/**
+	 * Override default API base URL
+	 */
+	baseUrl?: string;
+	
+	/**
+	 * Request timeout in milliseconds
+	 * @default 30000
+	 */
+	timeout?: number;
+	
+	/**
+	 * Enable automatic token refresh
+	 * @default true
+	 */
+	autoRefresh?: boolean;
+}
+
+/**
+ * Augment CLI provider specific configuration
+ */
+export interface AugmentProviderConfig {
+	/**
+	 * Path to augment CLI executable
+	 * @default 'augment'
+	 */
+	executable?: string;
+	
+	/**
+	 * Additional CLI arguments
+	 */
+	args?: string[];
+	
+	/**
+	 * Working directory for CLI execution
+	 * @default process.cwd()
+	 */
+	cwd?: string;
+	
+	/**
+	 * Environment variables for CLI execution
+	 */
+	env?: Record<string, string>;
+}
+
+/**
+ * Cursor CLI provider specific configuration
+ */
+export interface CursorProviderConfig {
+	/**
+	 * Path to cursor CLI executable
+	 * @default 'cursor'
+	 */
+	executable?: string;
+	
+	/**
+	 * Additional CLI arguments
+	 */
+	args?: string[];
+	
+	/**
+	 * Working directory for CLI execution
+	 * @default process.cwd()
+	 */
+	cwd?: string;
+	
+	/**
+	 * Environment variables for CLI execution
+	 */
+	env?: Record<string, string>;
+	
+	/**
+	 * Enable streaming response parsing
+	 * @default true
+	 */
+	streaming?: boolean;
 }
 
 /**
@@ -148,13 +271,20 @@ export interface SSEEventData {
 }
 
 /**
+ * Shared metadata structure for ETag-based caches
+ */
+export interface ETagCacheMetadata {
+	etag?: string | null;
+	lastChecked?: number;
+	[key: string]: unknown;
+}
+
+/**
  * Cache metadata for Codex instructions
  */
-export interface CacheMetadata {
-	etag: string | null;
-	tag: string;
-	lastChecked: number;
-	url: string;
+export interface CodexInstructionsMetadata extends ETagCacheMetadata {
+	tag?: string;
+	url?: string;
 }
 
 /**

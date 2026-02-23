@@ -1,17 +1,25 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import type { GitHubRelease, CacheMetadata } from "../types.js";
+import type { CodexInstructionsMetadata, GitHubRelease } from "../types.js";
+import {
+	buildIfNoneMatchHeader,
+	isCacheFresh,
+	loadETagCache,
+	writeETagCache,
+} from "../cache/etag-cache.js";
 
 // Codex instructions constants
 const GITHUB_API_RELEASES = "https://api.github.com/repos/openai/codex/releases/latest";
 const CACHE_DIR = join(homedir(), ".opencode", "cache");
 const CACHE_FILE = join(CACHE_DIR, "codex-instructions.md");
 const CACHE_METADATA_FILE = join(CACHE_DIR, "codex-instructions-meta.json");
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const BUNDLED_INSTRUCTIONS_FILE = join(__dirname, "codex-instructions.md");
 
 /**
  * Get the latest release tag from GitHub
@@ -24,6 +32,10 @@ async function getLatestReleaseTag(): Promise<string> {
 	return data.tag_name;
 }
 
+async function readBundledInstructions(): Promise<string> {
+	return readFile(BUNDLED_INSTRUCTIONS_FILE, "utf8");
+}
+
 /**
  * Fetch Codex instructions from GitHub with ETag-based caching
  * Uses HTTP conditional requests to efficiently check for updates
@@ -33,73 +45,53 @@ async function getLatestReleaseTag(): Promise<string> {
  * @returns Codex instructions
  */
 export async function getCodexInstructions(): Promise<string> {
+	const { content: cachedInstructions, metadata } = await loadETagCache<CodexInstructionsMetadata>(
+		CACHE_FILE,
+		CACHE_METADATA_FILE,
+	);
+
+	const fallbackToCachedOrBundled = async () => {
+		if (cachedInstructions) {
+			return cachedInstructions;
+		}
+
+		return readBundledInstructions();
+	};
+
 	try {
-		// Load cached metadata (includes ETag, tag, and lastChecked timestamp)
-		let cachedETag: string | null = null;
-		let cachedTag: string | null = null;
-		let cachedTimestamp: number | null = null;
-
-		if (existsSync(CACHE_METADATA_FILE)) {
-			const metadata = JSON.parse(readFileSync(CACHE_METADATA_FILE, "utf8")) as CacheMetadata;
-			cachedETag = metadata.etag;
-			cachedTag = metadata.tag;
-			cachedTimestamp = metadata.lastChecked;
+		if (cachedInstructions && isCacheFresh(metadata, CACHE_TTL_MS)) {
+			return cachedInstructions;
 		}
 
-		// Rate limit protection: If cache is less than 15 minutes old, use it
-		const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
-		if (cachedTimestamp && (Date.now() - cachedTimestamp) < CACHE_TTL_MS && existsSync(CACHE_FILE)) {
-			return readFileSync(CACHE_FILE, "utf8");
-		}
-
-		// Get the latest release tag (only if cache is stale or missing)
 		const latestTag = await getLatestReleaseTag();
-		const CODEX_INSTRUCTIONS_URL = `https://raw.githubusercontent.com/openai/codex/${latestTag}/codex-rs/core/gpt_5_codex_prompt.md`;
+		const instructionsUrl = `https://raw.githubusercontent.com/openai/codex/${latestTag}/codex-rs/core/gpt_5_codex_prompt.md`;
 
-		// If tag changed, we need to fetch new instructions
-		if (cachedTag !== latestTag) {
-			cachedETag = null; // Force re-fetch
+		const headers = metadata?.tag === latestTag ? buildIfNoneMatchHeader(metadata) : {};
+		const response = await fetch(instructionsUrl, { headers });
+
+		if (response.status === 304 && cachedInstructions) {
+			const updatedMetadata: CodexInstructionsMetadata = {
+				...(metadata ?? {}),
+				etag: metadata?.etag,
+				tag: latestTag,
+				url: instructionsUrl,
+				lastChecked: Date.now(),
+			};
+
+			await writeETagCache(CACHE_FILE, CACHE_METADATA_FILE, cachedInstructions, updatedMetadata);
+			return cachedInstructions;
 		}
 
-		// Make conditional request with If-None-Match header
-		const headers: Record<string, string> = {};
-		if (cachedETag) {
-			headers["If-None-Match"] = cachedETag;
-		}
-
-		const response = await fetch(CODEX_INSTRUCTIONS_URL, { headers });
-
-		// 304 Not Modified - our cached version is still current
-		if (response.status === 304) {
-			if (existsSync(CACHE_FILE)) {
-				return readFileSync(CACHE_FILE, "utf8");
-			}
-			// Cache file missing but GitHub says not modified - fall through to re-fetch
-		}
-
-		// 200 OK - new content or first fetch
 		if (response.ok) {
 			const instructions = await response.text();
-			const newETag = response.headers.get("etag");
+			const newMetadata: CodexInstructionsMetadata = {
+				etag: response.headers.get("etag"),
+				tag: latestTag,
+				lastChecked: Date.now(),
+				url: instructionsUrl,
+			};
 
-			// Create cache directory if it doesn't exist
-			if (!existsSync(CACHE_DIR)) {
-				mkdirSync(CACHE_DIR, { recursive: true });
-			}
-
-			// Cache the instructions with ETag and tag (verbatim from GitHub)
-			writeFileSync(CACHE_FILE, instructions, "utf8");
-			writeFileSync(
-				CACHE_METADATA_FILE,
-				JSON.stringify({
-					etag: newETag,
-					tag: latestTag,
-					lastChecked: Date.now(),
-					url: CODEX_INSTRUCTIONS_URL,
-				} satisfies CacheMetadata),
-				"utf8",
-			);
-
+			await writeETagCache(CACHE_FILE, CACHE_METADATA_FILE, instructions, newMetadata);
 			return instructions;
 		}
 
@@ -111,15 +103,13 @@ export async function getCodexInstructions(): Promise<string> {
 			err.message,
 		);
 
-		// Try to use cached version even if stale
-		if (existsSync(CACHE_FILE)) {
+		if (cachedInstructions) {
 			console.error("[openai-codex-plugin] Using cached instructions");
-			return readFileSync(CACHE_FILE, "utf8");
+			return cachedInstructions;
 		}
 
-		// Fall back to bundled version
 		console.error("[openai-codex-plugin] Falling back to bundled instructions");
-		return readFileSync(join(__dirname, "codex-instructions.md"), "utf8");
+		return fallbackToCachedOrBundled();
 	}
 }
 

@@ -240,6 +240,20 @@ For plugin development or testing unreleased changes:
 }
 ```
 
+**Local Development:**
+```bash
+# From current working directory
+{
+  "plugin": ["file://$(pwd)/dist"]
+}
+
+# Or using environment variable
+export PLUGIN_DIR="$(pwd)"
+{
+  "plugin": ["file://${PLUGIN_DIR}/dist"]
+}
+```
+
 **Note**: Must point to `dist/` folder (built output), not root.
 
 **Build the plugin:**

@@ -28,7 +28,21 @@ cp config/full-opencode.json ~/.config/opencode/opencode.json
 This demonstrates:
 - Global options for all models
 - Per-model configuration overrides
-- All supported model variants (gpt-5-codex, gpt-5, gpt-5-mini, gpt-5-nano)
+- All supported OpenAI models (gpt-5-codex, gpt-5, gpt-5-mini, gpt-5-nano)
+- Cursor CLI models (auto, gpt-4, sonnet-4.5, gemini-2.5-pro, claude-4.5-thinking, deepseek-v3.1, grok-3-beta)
+- Augment CLI models (default, gpt-4, claude-4.5, claude-4.5-thinking, sonnet-4.5, opus-4.1)
+
+### plugin-config-example.json
+Example plugin configuration for multi-provider setup (cursor/augment support).
+
+```bash
+cp config/plugin-config-example.json ~/.opencode/openai-codex-auth-config.json
+```
+
+This configures:
+- Provider priority and fallback behavior
+- Codex, Cursor, and Augment CLI settings
+- Auto-fallback between providers
 
 ## Usage
 
